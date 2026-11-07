@@ -1,0 +1,493 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+const double INF = 1e18;
+const double EPS = 1e-9;
+
+struct Point {
+    double x, y;
+};
+
+class TSP {
+public:
+    int n, base;
+    vector<vector<double>> dist;
+
+    vector<int> bestPath;
+    double bestCost = INF;
+
+    long long explored = 0;
+    long long pruned = 0;
+
+    TSP(vector<vector<double>> d, int start) {
+        dist = d;
+        n = (int)d.size();
+        base = start;
+    }
+
+    // Nearest Neighbor baseline algorithm
+    pair<vector<int>, double> nearestNeighbor() {
+        vector<bool> visited(n, false);
+        vector<int> path;
+
+        int current = base;
+        double cost = 0;
+
+        visited[current] = true;
+        path.push_back(current);
+
+        for (int step = 1; step < n; step++) {
+            int next = -1;
+            double minimum = INF;
+
+            for (int j = 0; j < n; j++) {
+                if (!visited[j] &&
+                    dist[current][j] < minimum) {
+                    minimum = dist[current][j];
+                    next = j;
+                }
+            }
+
+            if (next == -1) break;
+
+            cost += dist[current][next];
+            current = next;
+
+            visited[current] = true;
+            path.push_back(current);
+        }
+
+        if (n > 1)
+            cost += dist[current][base];
+
+        path.push_back(base);
+
+        return {path, cost};
+    }
+
+    // Admissible lower bound for directed or undirected TSP
+    double lowerBound(int current,
+                      const vector<int>& unvisited,
+                      double cost) {
+
+        double bound = cost;
+
+        vector<int> sources;
+        sources.push_back(current);
+
+        for (int v : unvisited)
+            sources.push_back(v);
+
+        for (int u : sources) {
+            double minimum = INF;
+
+            // Current vertex must visit an unvisited vertex.
+            // Every remaining vertex must eventually reach
+            // another remaining vertex or the base.
+            for (int v : unvisited) {
+                if (u != v) {
+                    minimum = min(minimum, dist[u][v]);
+                }
+            }
+
+            // Return-to-base edge
+            if (u != base) {
+                minimum = min(minimum, dist[u][base]);
+            }
+
+            // If no unvisited vertices remain, return to base.
+            if (unvisited.empty() && u == current) {
+                minimum = dist[u][base];
+            }
+
+            if (minimum == INF)
+                return INF;
+
+            bound += minimum;
+        }
+
+        return bound;
+    }
+
+    // Branch and Bound recursive search
+    void dfs(int current,
+             vector<int>& path,
+             vector<int>& unvisited,
+             double cost) {
+
+        explored++;
+
+        double bound = lowerBound(
+            current, unvisited, cost
+        );
+
+        // Prune branches that cannot improve the best solution
+        if (bound >= bestCost - EPS) {
+            pruned++;
+            return;
+        }
+
+        // All vertices visited: return to base
+        if (unvisited.empty()) {
+            double total = cost + dist[current][base];
+
+            if (total < bestCost - EPS) {
+                bestCost = total;
+                bestPath = path;
+                bestPath.push_back(base);
+            }
+            return;
+        }
+
+        // Visit the nearest candidate first
+        sort(unvisited.begin(), unvisited.end(),
+             [&](int a, int b) {
+                 return dist[current][a] < dist[current][b];
+             });
+
+        vector<int> candidates = unvisited;
+
+        for (int next : candidates) {
+
+            auto it = find(
+                unvisited.begin(),
+                unvisited.end(),
+                next
+            );
+
+            if (it == unvisited.end())
+                continue;
+
+            unvisited.erase(it);
+            path.push_back(next);
+
+            dfs(
+                next,
+                path,
+                unvisited,
+                cost + dist[current][next]
+            );
+
+            path.pop_back();
+            unvisited.push_back(next);
+        }
+    }
+
+    // Branch and Bound starting function
+    void branchAndBound() {
+
+        explored = 0;
+        pruned = 0;
+
+        auto initial = nearestNeighbor();
+
+        bestCost = initial.second;
+        bestPath = initial.first;
+
+        if (n <= 1)
+            return;
+
+        vector<int> path = {base};
+        vector<int> unvisited;
+
+        for (int i = 0; i < n; i++) {
+            if (i != base)
+                unvisited.push_back(i);
+        }
+
+        dfs(base, path, unvisited, 0);
+    }
+
+    // Brute Force verification
+    pair<vector<int>, double> bruteForce() {
+
+        vector<int> p;
+
+        for (int i = 0; i < n; i++) {
+            if (i != base)
+                p.push_back(i);
+        }
+
+        vector<int> best;
+        double minimum = INF;
+
+        do {
+            double cost = 0;
+            int current = base;
+
+            vector<int> route = {base};
+
+            for (int v : p) {
+                cost += dist[current][v];
+                current = v;
+                route.push_back(v);
+            }
+
+            cost += dist[current][base];
+            route.push_back(base);
+
+            if (cost < minimum) {
+                minimum = cost;
+                best = route;
+            }
+
+        } while (next_permutation(p.begin(), p.end()));
+
+        return {best, minimum};
+    }
+};
+
+// Print route
+void printRoute(const vector<int>& route) {
+    for (int i = 0; i < (int)route.size(); i++) {
+        cout << route[i];
+
+        if (i + 1 < (int)route.size())
+            cout << " -> ";
+    }
+    cout << "\n";
+}
+
+// Check whether matrix is symmetric
+bool isSymmetric(const vector<vector<double>>& d) {
+    int n = d.size();
+
+    for (int i = 0; i < n; i++) {
+        for (int j = i + 1; j < n; j++) {
+            if (abs(d[i][j] - d[j][i]) > EPS)
+                return false;
+        }
+    }
+    return true;
+}
+
+// Generate Graphviz route visualization
+void generateVisualization(
+    const vector<int>& route,
+    const vector<Point>& points,
+    bool hasCoordinates
+) {
+    ofstream file("drone_route.dot");
+
+    file << "digraph DroneRoute {\n";
+    file << "graph [layout=neato, overlap=false];\n";
+    file << "node [shape=circle, style=filled, "
+         << "fillcolor=lightblue];\n";
+
+    for (int i = 0; i < (int)route.size() - 1; i++) {
+        int v = route[i];
+
+        file << v << " [label=\"";
+
+        if (i == 0)
+            file << "BASE ";
+        file << v << "\"";
+
+        if (hasCoordinates) {
+            file << ", pos=\"" << points[v].x
+                 << "," << points[v].y << "!\"";
+        }
+
+        file << "];\n";
+    }
+
+    file << "node [fillcolor=lightgreen];\n";
+    file << "edge [color=red, penwidth=2];\n";
+
+    for (int i = 0; i + 1 < (int)route.size(); i++) {
+        file << route[i] << " -> "
+             << route[i + 1] << ";\n";
+    }
+
+    file << "}\n";
+    file.close();
+
+    cout << "\nVisualization saved as drone_route.dot\n";
+    cout << "Use Graphviz command:\n";
+    cout << "neato -Tpng drone_route.dot -o drone_route.png\n";
+}
+
+int main() {
+
+    cout << "========================================\n";
+    cout << " DRONE SOIL-SAMPLING ROUTE OPTIMIZATION\n";
+    cout << "========================================\n";
+
+    int choice;
+
+    cout << "\n1. Enter Coordinates\n";
+    cout << "2. Enter Distance Matrix\n";
+    cout << "Enter choice: ";
+    cin >> choice;
+
+    int n;
+    vector<Point> points;
+    vector<vector<double>> d;
+
+    cout << "Enter number of locations: ";
+    cin >> n;
+
+    if (n < 1 || n > 20) {
+        cout << "Invalid number of locations.\n";
+        return 0;
+    }
+
+    d.assign(n, vector<double>(n, 0));
+
+    bool hasCoordinates = false;
+
+    if (choice == 1) {
+
+        hasCoordinates = true;
+        points.resize(n);
+
+        cout << "\nEnter X and Y coordinates:\n";
+
+        for (int i = 0; i < n; i++) {
+            cout << "Point " << i << ": ";
+            cin >> points[i].x >> points[i].y;
+        }
+
+        // Euclidean distance calculation
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n; j++) {
+                double dx = points[i].x - points[j].x;
+                double dy = points[i].y - points[j].y;
+
+                d[i][j] = sqrt(dx * dx + dy * dy);
+            }
+        }
+    }
+    else if (choice == 2) {
+
+        cout << "\nEnter the distance matrix:\n";
+
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n; j++) {
+                cin >> d[i][j];
+
+                if (d[i][j] < 0) {
+                    cout << "Negative costs are not supported.\n";
+                    return 0;
+                }
+            }
+        }
+    }
+    else {
+        cout << "Invalid choice.\n";
+        return 0;
+    }
+
+    int base;
+
+    cout << "\nEnter base location index (0 to "
+         << n - 1 << "): ";
+    cin >> base;
+
+    if (base < 0 || base >= n) {
+        cout << "Invalid base index.\n";
+        return 0;
+    }
+
+    cout << "\nDistance Matrix:\n";
+
+    for (auto &row : d) {
+        for (double value : row)
+            cout << setw(10) << fixed
+                 << setprecision(2) << value;
+        cout << "\n";
+    }
+
+    cout << "\nCost Type: "
+         << (isSymmetric(d) ? "Symmetric" : "Asymmetric")
+         << "\n";
+
+    TSP tsp(d, base);
+
+    // Nearest Neighbor
+    auto start1 = chrono::high_resolution_clock::now();
+
+    auto nn = tsp.nearestNeighbor();
+
+    auto end1 = chrono::high_resolution_clock::now();
+
+    double nnTime =
+        chrono::duration<double, milli>(
+            end1 - start1
+        ).count();
+
+    cout << "\n========== NEAREST NEIGHBOR ==========\n";
+
+    cout << "Route: ";
+    printRoute(nn.first);
+
+    cout << "Total Cost: " << nn.second << "\n";
+    cout << "Execution Time: " << nnTime << " ms\n";
+
+    // Branch and Bound
+    auto start2 = chrono::high_resolution_clock::now();
+
+    tsp.branchAndBound();
+
+    auto end2 = chrono::high_resolution_clock::now();
+
+    double bbTime =
+        chrono::duration<double, milli>(
+            end2 - start2
+        ).count();
+
+    cout << "\n========== BRANCH AND BOUND ==========\n";
+
+    cout << "Optimal Route: ";
+    printRoute(tsp.bestPath);
+
+    cout << "Optimal Cost: " << tsp.bestCost << "\n";
+    cout << "Explored Nodes: " << tsp.explored << "\n";
+    cout << "Pruned Branches: " << tsp.pruned << "\n";
+    cout << "Execution Time: " << bbTime << " ms\n";
+
+    // Brute-force verification for n = 8
+    if (n == 8) {
+
+        cout << "\n========== BRUTE FORCE VERIFICATION ==========\n";
+
+        auto start3 = chrono::high_resolution_clock::now();
+
+        auto brute = tsp.bruteForce();
+
+        auto end3 = chrono::high_resolution_clock::now();
+
+        double bruteTime =
+            chrono::duration<double, milli>(
+                end3 - start3
+            ).count();
+
+        cout << "Brute Force Route: ";
+        printRoute(brute.first);
+
+        cout << "Brute Force Cost: " << brute.second << "\n";
+        cout << "Brute Force Time: " << bruteTime << " ms\n";
+
+        if (abs(brute.second - tsp.bestCost) < EPS)
+            cout << "VERIFICATION PASSED!\n";
+        else
+            cout << "VERIFICATION FAILED!\n";
+    }
+
+    cout << "\n========== COMPARISON ==========\n";
+
+    cout << "Nearest Neighbor Cost: " << nn.second << "\n";
+    cout << "Branch and Bound Cost: " << tsp.bestCost << "\n";
+
+    cout << "Improvement: "
+         << nn.second - tsp.bestCost << "\n";
+
+    // Generate route visualization
+    generateVisualization(
+        tsp.bestPath, points, hasCoordinates
+    );
+
+    cout << "\nProject completed successfully!\n";
+
+    return 0;
+}
